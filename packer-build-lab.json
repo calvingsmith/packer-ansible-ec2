@@ -1,0 +1,95 @@
+{
+    "variables": {
+        "aws_access_key": "{{env `AWS_ACCESS_KEY_ID`}}",
+        "aws_secret_key": "{{env `AWS_SECRET_ACCESS_KEY`}}",
+        "ami_name": "Satellite 6.12 {{isotime `2006-01-02-150405`}}",
+        "aws_region": "us-east-2",
+        "ssh_username": "ec2-user",
+        "vpc_id": "vpc-071024c9ef4cb5b61",
+        "subnet_id": "subnet-02c24a685ca1d1a69",
+        "red_hat_activation_key": "AK-Sat",
+        "red_hat_org_id": "6600066",
+        "ah_api_token": "eyJhbGciOiJIUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJhZDUyMjdhMy1iY2ZkLTRjZjAtYTdiNi0zOTk4MzVhMDg1NjYifQ.eyJpYXQiOjE2ODE4NTA4OTQsImp0aSI6IjE0YmU3ZDFlLWY5NTEtNGQ1Yy1hY2Q0LWQ3NzA4ZjExNDllYyIsImlzcyI6Imh0dHBzOi8vc3NvLnJlZGhhdC5jb20vYXV0aC9yZWFsbXMvcmVkaGF0LWV4dGVybmFsIiwiYXVkIjoiaHR0cHM6Ly9zc28ucmVkaGF0LmNvbS9hdXRoL3JlYWxtcy9yZWRoYXQtZXh0ZXJuYWwiLCJzdWIiOiJmOjUyOGQ3NmZmLWY3MDgtNDNlZC04Y2Q1LWZlMTZmNGZlMGNlNjpjYWx2aW5AcmVkaGF0LmNvbSIsInR5cCI6Ik9mZmxpbmUiLCJhenAiOiJjbG91ZC1zZXJ2aWNlcyIsIm5vbmNlIjoiMzEyYzMzZGYtMGIzOS00MGUwLTgzNmQtNmU3ZmM5NWJhMDk4Iiwic2Vzc2lvbl9zdGF0ZSI6IjhlN2Y5NjU4LTYxZGUtNDRmNS04ZGFjLTBiNTE1NTAyOTY0YyIsInNjb3BlIjoib3BlbmlkIGFwaS5pYW0uc2VydmljZV9hY2NvdW50cyBhcGkuaWFtLm9yZ2FuaXphdGlvbiBvZmZsaW5lX2FjY2VzcyIsInNpZCI6IjhlN2Y5NjU4LTYxZGUtNDRmNS04ZGFjLTBiNTE1NTAyOTY0YyJ9.3ZGXV0a1S1bfpee0Cp9e8cpb5hwyFq8zmse5zsXFLi0",
+        "satellite_manifest_url": "https://www.dropbox.com/s/47k6brnl62nsmo0/manifest_satellite.amazon_20230418T210955Z.zip?dl=0"
+    },
+    "builders": [{
+        "type": "amazon-ebs",
+        "access_key": "{{user `aws_access_key`}}",
+        "secret_key": "{{user `aws_secret_key`}}",
+        "region": "{{user `aws_region`}}",
+        "instance_type": "r5a.xlarge",
+        "ebs_optimized": "true",
+        "force_deregister": "true",
+        "ssh_username": "{{user `ssh_username`}}",
+        "communicator": "ssh",
+        "associate_public_ip_address": true,
+        "subnet_id": "{{user `subnet_id`}}",
+        "ami_name": "{{user `ami_name`}}",
+        "source_ami_filter": {
+            "filters": {
+                "virtualization-type": "hvm",
+                "name": "RHEL-8.7.*_HVM-*-x86_64-2-Hourly2-GP2",
+                "root-device-type": "ebs"
+            },
+            "owners": ["309956199498"],
+            "most_recent": true
+        },
+        "launch_block_device_mappings": [
+            {
+               "device_name": "/dev/sda1",
+               "volume_size": "250",
+               "volume_type": "gp3",
+               "iops": "5000",
+               "throughput": "1000"
+            }
+          ],
+        "run_tags": {
+            "Name": "packer-satellite-image"
+        }
+    }],
+    "provisioners": [{
+            "type": "shell",
+            "inline": "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo 'Waiting for cloud-init...'; sleep 1; done"
+        },
+        {
+            "type": "file",
+            "source": "provisioners/scripts/venv_wrapper.sh",
+            "destination": "/tmp/venv_wrapper.sh"
+        },
+        {
+            "type": "file",
+            "source": "provisioners/ansible/collections/requirements.yml",
+            "destination": "/tmp/requirements.yml"
+        },
+        {
+            "type": "file",
+            "source": "provisioners/ansible/ansible.cfg",
+            "destination": "/home/{{user `ssh_username`}}/.ansible.cfg"
+        },
+        {
+            "type": "file",
+            "source": "provisioners/ansible/vars/sat_repos.yml",
+            "destination": "/tmp/sat_repos.yml"
+        },
+        {
+            "type": "shell",
+            "environment_vars": [
+                "LANG=en_US.UTF-8",
+                "LC_ALL=en_US.UTF-8",
+                "api_token={{user `ah_api_token`}}",
+                "satellite_manifest={{user `satellite_manifest_url`}}"
+              ],
+            "script": "./provisioners/scripts/bootstrap.sh"
+        },
+        {
+            "type": "ansible-local",
+            "command": "/tmp/venv_wrapper.sh",
+            "playbook_file": "./provisioners/ansible/setup-server.yml",
+            "extra_arguments": [
+                "--extra-vars",
+                "\"org_id={{user `red_hat_org_id`}} satellite_activation_key={{user `red_hat_activation_key`}}\""
+              
+              ]
+        }
+      ]
+}
